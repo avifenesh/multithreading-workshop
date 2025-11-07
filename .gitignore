@@ -1,0 +1,42 @@
+# Compiled binaries
+exercises/*/0[0-9]_*
+!exercises/*/*.c
+
+# Object files
+*.o
+*.so
+*.a
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Assembly output
+*.s
+*.asm
+
+# Core dumps
+core
+core.*
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Perf data
+perf.data
+perf.data.old
+*.perf
+
+# Valgrind/sanitizer output
+*.log
+vgcore.*
