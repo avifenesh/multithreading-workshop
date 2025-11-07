@@ -21,12 +21,13 @@ sudo apt-get install build-essential linux-tools-generic valgrind
 
 ## Exercises
 
-1. **01_atomics** - C11 atomics, lock-free, memory orders (relaxed/acquire/release/seq_cst)
+1. **01_atomics** - Memory ordering deep dive: seq_cst vs relaxed vs acquire-release, message passing patterns
 2. **02_rwlock** - Reader-writer locks, scalable concurrent reads
-3. **03_cache_effects** - False sharing, cache coherency (MESI), 64-byte cache lines
-4. **04_memory_ordering** - Happens-before, reordering, acquire/release patterns
-5. **05_spinlock_internals** - TAS vs TTAS, LOCK prefix, PAUSE instruction
+3. **03_cache_effects** - False sharing, cache coherency (MESI), 64-byte cache lines (2-10x impact!)
+4. **04_memory_ordering** - x86 TSO vs ARM weak ordering, acquire/release patterns, ThreadSanitizer essential
+5. **05_spinlock_internals** - TAS → TTAS → TTAS+PAUSE → Exponential backoff, CPU PAUSE instruction
 6. **06_barriers** - Phase synchronization, manual implementation, epoch pattern
+7. **07_lockfree_queue** - Lock-free SPSC queue, cache alignment, acquire-release synchronization
 
 ## Quick Start
 
@@ -46,8 +47,16 @@ make objdump-05                # Disassemble binary
 
 ## Study Approach
 
+**For experienced developers (Rust/Node.js background):**
+1. Skim Exercise 00 (reference), skip Exercise 02 (you know RwLock)
+2. **Core path:** 01 → 03 → 04 → 05 → 07 (4-5 hours)
+3. Use analysis tools liberally: `make asm-XX`, `make tsan-XX`, `make perf-XX`
+4. Read **SYSTEMS_GUIDE.md** for deeper theory
+5. See **IMPROVEMENTS.md** for detailed enhancement guide
+
+**Traditional path:**
 1. Read **SYSTEMS_GUIDE.md** (theory: futex, cache coherency, memory models)
-2. Work through exercises 01-06 with assembly/perf inspection
+2. Work through exercises 01-07 with assembly/perf inspection
 3. Reference **API.md** for pthread details
 
 ## Key Concepts

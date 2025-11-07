@@ -106,12 +106,20 @@ Compare TAS vs TTAS performance. View assembly to see why.
 
 ## Next Steps
 
-Work through exercises 01-06 in order:
-1. Atomics - Memory orders
-2. RWLock - Concurrent readers
-3. Cache effects - False sharing
-4. Memory ordering - Acquire/release
-5. Spinlock - TAS vs TTAS
-6. Barriers - Phase sync
+**Recommended path for experienced developers:**
+1. **Exercise 01** - Memory ordering (seq_cst vs relaxed vs acquire-release)
+2. **Exercise 03** - Cache effects (false sharing = 2-10x impact!)
+3. **Exercise 04** - x86 vs ARM memory models (TSO vs weak)
+4. **Exercise 05** - Spinlocks + PAUSE instruction
+5. **Exercise 07** - Lock-free SPSC queue (directly applicable to databases!)
 
-Read `SYSTEMS_GUIDE.md` sections as needed for deeper understanding.
+**Complete path (exercises 01-07):**
+1. Atomics - Memory orders, message passing
+2. RWLock - Concurrent readers (optional if familiar with Rust RwLock)
+3. Cache effects - False sharing, alignas(64)
+4. Memory ordering - x86 TSO vs ARM, ThreadSanitizer
+5. Spinlock - TAS → TTAS → TTAS+PAUSE → Backoff
+6. Barriers - Phase sync (optional)
+7. Lock-free queue - SPSC pattern with acquire-release
+
+Read `SYSTEMS_GUIDE.md` and `IMPROVEMENTS.md` for deeper understanding.

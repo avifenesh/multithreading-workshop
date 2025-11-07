@@ -7,10 +7,12 @@
  * Covers: thread creation, mutex, atomics, memory ordering
  */
 
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <unistd.h>
+#include <sched.h>
 
 #define THREADS 4
 #define ITERATIONS 100000
@@ -75,7 +77,7 @@ void demo_race() {
     } else {
         printf("(got lucky)\n");
     }
-    printf("Assembly: movl (%rax), %%edx; incl %%edx; movl %%edx, (%rax)\n");
+    printf("Assembly: movl (%%rax), %%edx; incl %%edx; movl %%edx, (%%rax)\n");
     printf("          ^^^ Not atomic, can interleave\n");
 }
 
@@ -140,7 +142,7 @@ void demo_atomic() {
     }
     
     printf("Expected: %d, Got: %d ✓\n", THREADS * ITERATIONS, atomic_load(&atomic_counter));
-    printf("Assembly: lock incl (%rax)  ← LOCK prefix ensures atomicity\n");
+    printf("Assembly: lock incl (%%rax)  \u2190 LOCK prefix ensures atomicity\n");
     printf("No syscall, but LOCK causes cache coherency traffic\n");
 }
 

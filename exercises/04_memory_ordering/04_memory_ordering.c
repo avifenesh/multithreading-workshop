@@ -1,10 +1,23 @@
 /**
- * Exercise 4: Memory Ordering and Reordering
- * 
- * Demonstrates compiler and CPU reordering issues, and how
- * memory ordering constraints prevent them.
- * 
- * Shows broken code, seq_cst fix, and acquire-release patterns.
+ * Exercise 4: Memory Ordering and CPU Memory Models
+ *
+ * ⚠️ CRITICAL x86 CAVEAT ⚠️
+ * The "broken" version often WORKS on x86 due to strong memory model (TSO).
+ * Use ThreadSanitizer to catch the bug: make tsan-04
+ *
+ * x86-64 Memory Model (TSO - Total Store Ordering):
+ *   ✓ Loads are NOT reordered with loads
+ *   ✓ Stores are NOT reordered with stores
+ *   ✓ Stores are NOT reordered with earlier loads
+ *   ✗ Loads MAY be reordered with earlier stores (the only hole!)
+ *
+ * ARM/PowerPC/RISC-V have WEAK ordering - reorders aggressively!
+ *
+ * LEARNING GOALS:
+ * - Understand x86 TSO vs ARM weak ordering
+ * - See compiler vs CPU reordering
+ * - Master acquire-release synchronization
+ * - Learn why volatile ≠ atomic
  */
 
 #include <stdio.h>
@@ -87,26 +100,63 @@ void test_version(const char *name, void *(*producer)(void*), void *(*consumer)(
 }
 
 int main() {
-    printf("=== Memory Ordering Demo ===\n");
-    printf("This demonstrates why memory ordering matters.\n");
-    
+    printf("═══════════════════════════════════════════════════════════\n");
+    printf("  Exercise 04: Memory Ordering & CPU Memory Models\n");
+    printf("═══════════════════════════════════════════════════════════\n\n");
+
+    printf("⚠️  IMPORTANT: x86 Memory Model Caveat\n");
+    printf("╔═══════════════════════════════════════════════════════╗\n");
+    printf("║  The 'broken' version will likely WORK on x86!       ║\n");
+    printf("║  x86 has TSO (Total Store Order) - strong model      ║\n");
+    printf("║  ARM/RISC-V would fail reliably                      ║\n");
+    printf("║                                                        ║\n");
+    printf("║  To catch the bug: make tsan-04                      ║\n");
+    printf("╚═══════════════════════════════════════════════════════╝\n\n");
+
+    printf("x86-64 Ordering Rules (TSO):\n");
+    printf("  ✓ Store-Store: NO reordering (data=42, flag=1 stays ordered)\n");
+    printf("  ✓ Load-Load:   NO reordering\n");
+    printf("  ✓ Load-Store:  NO reordering\n");
+    printf("  ✗ Store-Load:  MAY reorder (the weak point)\n\n");
+
     // WARNING: Broken version may appear to work due to timing
-    printf("\n--- Testing BROKEN version (no synchronization) ---");
-    for (int i = 0; i < 5; i++) {
-        test_version("Broken (no atomics)", producer_broken, consumer_broken);
+    printf("Testing BROKEN version (no atomics):\n");
+    printf("  On x86: Usually works (luck + TSO)\n");
+    printf("  On ARM: Would fail spectacularly\n");
+    printf("  Compiler: Can still reorder if optimized!\n\n");
+    for (int i = 0; i < 3; i++) {
+        test_version("  Broken", producer_broken, consumer_broken);
     }
-    
-    printf("\n--- Testing seq_cst version ---");
-    test_version("Sequential consistency", producer_seqcst, consumer_seqcst);
-    
-    printf("\n--- Testing acquire-release version ---");
-    test_version("Acquire-release", producer_acqrel, consumer_acqrel);
-    
-    printf("\nKey insights:\n");
-    printf("1. Without atomics, compiler/CPU can reorder operations\n");
-    printf("2. seq_cst provides total order but is expensive\n");
-    printf("3. acquire-release provides necessary synchronization efficiently\n");
-    printf("\nUse 'make asm-04' to see actual assembly differences\n");
-    
+
+    printf("\nTesting seq_cst version:\n");
+    test_version("  Seq_cst", producer_seqcst, consumer_seqcst);
+
+    printf("\nTesting acquire-release version:\n");
+    test_version("  Acquire-release", producer_acqrel, consumer_acqrel);
+
+    printf("\n═══════════════════════════════════════════════════════════\n");
+    printf("  KEY INSIGHTS:\n");
+    printf("  • x86 TSO masks many bugs (false sense of security)\n");
+    printf("  • ARM/RISC-V weak ordering exposes them immediately\n");
+    printf("  • Compiler can reorder even on x86 (use -O2)\n");
+    printf("  • seq_cst: Full fence, expensive (MFENCE on x86)\n");
+    printf("  • acquire-release: Efficient one-way barriers\n");
+    printf("\n");
+    printf("  ANALYSIS:\n");
+    printf("  make asm-04     - See fence instructions\n");
+    printf("  make tsan-04    - Catch the race (ESSENTIAL!)\n");
+    printf("  make objdump-04 - Full disassembly\n");
+    printf("\n");
+    printf("  ASSEMBLY ON x86:\n");
+    printf("  • Broken:         Plain 'mov' instructions\n");
+    printf("  • seq_cst store:  'mfence; mov' or 'lock mov'\n");
+    printf("  • release store:  Plain 'mov' (x86 TSO is enough)\n");
+    printf("  • acquire load:   Plain 'mov' (x86 TSO is enough)\n");
+    printf("\n");
+    printf("  ASSEMBLY ON ARM:\n");
+    printf("  • release: 'stlr' (store-release) or 'str; dmb ish'\n");
+    printf("  • acquire: 'ldar' (load-acquire) or 'dmb ish; ldr'\n");
+    printf("═══════════════════════════════════════════════════════════\n");
+
     return 0;
 }
