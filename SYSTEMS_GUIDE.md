@@ -425,8 +425,11 @@ atomic_fetch_add(&counter, 1);  // ~10-50ns depending on contention
 
 ## Exercises That Demonstrate These Concepts
 
-- **Cache effects:** `advanced/08_cache_effects` - false sharing, padding
-- **Memory ordering:** `advanced/09_memory_ordering` - acquire/release semantics
-- **Spinlock internals:** `advanced/10_spinlock_internals` - implement from scratch
-- **Barriers:** `advanced/11_barriers` - phase synchronization
+- **Quick review:** `exercises/00_quick_review` - daily warmup, core concepts
+- **Atomics:** `exercises/01_atomics` - lock-free programming, performance comparison
+- **RW locks:** `exercises/02_rwlock` - concurrent reads, exclusive writes
+- **Cache effects:** `exercises/03_cache_effects` - false sharing, padding
+- **Memory ordering:** `exercises/04_memory_ordering` - acquire/release semantics
+- **Spinlock internals:** `exercises/05_spinlock_internals` - implement from scratch
+- **Barriers:** `exercises/06_barriers` - phase synchronization
 
