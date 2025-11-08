@@ -16,6 +16,7 @@ atomic_long seqcst_counter = 0;
 atomic_long relaxed_counter = 0;
 
 void* broken_increment(void* arg) {
+    (void)arg;
     for (int i = 0; i < INCREMENTS; i++) {
         broken_counter++;
     }
@@ -23,6 +24,7 @@ void* broken_increment(void* arg) {
 }
 
 void* seqcst_increment(void* arg) {
+    (void)arg;
     for (int i = 0; i < INCREMENTS; i++) {
         atomic_fetch_add_explicit(&seqcst_counter, 1, memory_order_seq_cst);
     }
@@ -30,6 +32,7 @@ void* seqcst_increment(void* arg) {
 }
 
 void* relaxed_increment(void* arg) {
+    (void)arg;
     for (int i = 0; i < INCREMENTS; i++) {
         atomic_fetch_add_explicit(&relaxed_counter, 1, memory_order_relaxed);
     }
@@ -41,18 +44,21 @@ atomic_int message_ready = 0;
 int message_data = 0;
 
 void* message_producer_broken(void* arg) {
+    (void)arg;
     message_data = 42;
     atomic_store_explicit(&message_ready, 1, memory_order_relaxed);
     return NULL;
 }
 
 void* message_producer_correct(void* arg) {
+    (void)arg;
     message_data = 42;
     atomic_store_explicit(&message_ready, 1, memory_order_release);
     return NULL;
 }
 
 void* message_consumer_broken(void* arg) {
+    (void)arg;
     while (atomic_load_explicit(&message_ready, memory_order_relaxed) == 0);
     int value = message_data;
     printf("Consumer saw (broken): %d\n", value);
@@ -60,6 +66,7 @@ void* message_consumer_broken(void* arg) {
 }
 
 void* message_consumer_correct(void* arg) {
+    (void)arg;
     while (atomic_load_explicit(&message_ready, memory_order_acquire) == 0);
     int value = message_data;
     printf("Consumer saw (correct): %d\n", value);

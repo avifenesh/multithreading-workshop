@@ -14,10 +14,12 @@
  * - Measure actual performance difference
  */
 
+#define _DEFAULT_SOURCE
 #include <stdio.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <time.h>
+#include <unistd.h>
 
 #define NUM_THREADS 8
 #define INCREMENTS 5000000
@@ -32,6 +34,7 @@ atomic_long relaxed_counter = 0;            // Relaxed ordering
 // =============================================================================
 
 void* broken_increment(void* arg) {
+    (void)arg;
     for (int i = 0; i < INCREMENTS; i++) {
         broken_counter++;  // NOT ATOMIC
         // Assembly on x86_64:
@@ -48,16 +51,16 @@ void* broken_increment(void* arg) {
 // =============================================================================
 
 void* seqcst_increment(void* arg) {
+    (void)arg;
     for (int i = 0; i < INCREMENTS; i++) {
-        // TODO: Use atomic_fetch_add with memory_order_seq_cst
-        // Hint: atomic_fetch_add_explicit(&seqcst_counter, 1, memory_order_seq_cst);
-        //
-        // This will generate on x86_64:
-        //   lock add QWORD PTR [rax], 0x1
-        // The LOCK prefix:
-        //   - Asserts LOCK# signal on memory bus
-        //   - Forces cache line to Exclusive state (MESI protocol)
-        //   - Provides full memory barrier (no reordering across it)
+      atomic_fetch_add_explicit(&seqcst_counter, 1, memory_order_seq_cst);
+      //
+      // This will generate on x86_64:
+      //   lock add QWORD PTR [rax], 0x1
+      // The LOCK prefix:
+      //   - Asserts LOCK# signal on memory bus
+      //   - Forces cache line to Exclusive state (MESI protocol)
+      //   - Provides full memory barrier (no reordering across it)
     }
     return NULL;
 }
@@ -67,18 +70,18 @@ void* seqcst_increment(void* arg) {
 // =============================================================================
 
 void* relaxed_increment(void* arg) {
+    (void)arg;
     for (int i = 0; i < INCREMENTS; i++) {
-        // TODO: Use atomic_fetch_add with memory_order_relaxed
-        // Hint: atomic_fetch_add_explicit(&relaxed_counter, 1, memory_order_relaxed);
-        //
-        // WHY IS THIS SAFE?
-        // - Each increment is independent (no happens-before needed)
-        // - We only care about final value, not intermediate states
-        // - No other memory operations to order relative to
-        //
-        // Assembly on x86_64: Same as seq_cst (lock add)
-        // On ARM: May use LDXR/STXR without DMB (data memory barrier)
-        // Performance win: Compiler can reorder, CPU can use store buffer
+      atomic_fetch_add_explicit(&relaxed_counter, 1, memory_order_relaxed);
+      //
+      // WHY IS THIS SAFE?
+      // - Each increment is independent (no happens-before needed)
+      // - We only care about final value, not intermediate states
+      // - No other memory operations to order relative to
+      //
+      // Assembly on x86_64: Same as seq_cst (lock add)
+      // On ARM: May use LDXR/STXR without DMB (data memory barrier)
+      // Performance win: Compiler can reorder, CPU can use store buffer
     }
     return NULL;
 }
@@ -92,9 +95,9 @@ atomic_int message_ready = 0;
 int message_data = 0;  // NOT atomic, protected by ordering
 
 void* message_producer_broken(void* arg) {
+    (void)arg;
     message_data = 42;
-    // TODO: This is BROKEN - use relaxed ordering
-    // Hint: atomic_store_explicit(&message_ready, 1, memory_order_relaxed);
+    atomic_store_explicit(&message_ready, 1, memory_order_relaxed);
     //
     // BUG: Compiler or CPU might reorder these two stores!
     // Consumer might see message_ready=1 but message_data=0
@@ -102,9 +105,9 @@ void* message_producer_broken(void* arg) {
 }
 
 void* message_producer_correct(void* arg) {
+    (void)arg;
     message_data = 42;
-    // TODO: Fix with release ordering
-    // Hint: atomic_store_explicit(&message_ready, 1, memory_order_release);
+    atomic_store_explicit(&message_ready, 1, memory_order_release);
     //
     // CORRECT: Release barrier prevents earlier stores from moving after
     // All stores before this are visible to thread doing acquire load
@@ -112,16 +115,16 @@ void* message_producer_correct(void* arg) {
 }
 
 void* message_consumer_broken(void* arg) {
-    // TODO: BROKEN - use relaxed ordering
-    // Hint: while (atomic_load_explicit(&message_ready, memory_order_relaxed) == 0);
+    (void)arg;
+    while (atomic_load_explicit(&message_ready, memory_order_relaxed) == 0);
     int value = message_data;
     printf("Consumer saw (broken): %d\n", value);
     return NULL;
 }
 
 void* message_consumer_correct(void* arg) {
-    // TODO: Fix with acquire ordering
-    // Hint: while (atomic_load_explicit(&message_ready, memory_order_acquire) == 0);
+    (void)arg;
+    while (atomic_load_explicit(&message_ready, memory_order_acquire) == 0);
     //
     // CORRECT: Acquire barrier prevents later loads from moving before
     // Synchronized-with the release store in producer
@@ -182,21 +185,18 @@ int main() {
     // Test 2: Sequential consistency
     printf("2. TODO: SEQUENTIAL CONSISTENCY (memory_order_seq_cst)\n");
     printf("   Implement seqcst_increment() first!\n");
-    // TODO: Uncomment after implementing seqcst_increment
-    /*
+    
     atomic_store(&seqcst_counter, 0);
     double seqcst_time = measure_time(seqcst_increment, NULL);
     printf("   Time: %.3f s\n", seqcst_time);
     printf("   Got: %ld ✓\n", atomic_load(&seqcst_counter));
     printf("   Cost: Full memory barrier (expensive)\n");
     printf("\n");
-    */
 
     // Test 3: Relaxed ordering
     printf("3. TODO: RELAXED ORDERING (memory_order_relaxed)\n");
     printf("   Implement relaxed_increment() second!\n");
-    // TODO: Uncomment after implementing relaxed_increment
-    /*
+    
     atomic_store(&relaxed_counter, 0);
     double relaxed_time = measure_time(relaxed_increment, NULL);
     printf("   Time: %.3f s\n", relaxed_time);
@@ -204,16 +204,14 @@ int main() {
     printf("   Speedup: %.2fx faster than seq_cst\n", seqcst_time / relaxed_time);
     printf("   Why safe: Independent increments, no synchronization needed\n");
     printf("\n");
-    */
+    
 
     // Test 4: Message passing (demonstrate ordering matters)
     printf("4. TODO: MESSAGE PASSING PATTERN\n");
     printf("   This shows where memory ordering REALLY matters!\n");
     printf("   Implement the producer/consumer functions.\n");
     printf("\n");
-
-    // TODO: Uncomment after implementing message passing
-    /*
+    
     printf("   Testing BROKEN version (relaxed):\n");
     for (int i = 0; i < 5; i++) {
         message_data = 0;
@@ -237,7 +235,7 @@ int main() {
         pthread_join(prod, NULL);
         pthread_join(cons, NULL);
     }
-    */
+    
 
     printf("\n");
     printf("═══════════════════════════════════════════════════════════\n");

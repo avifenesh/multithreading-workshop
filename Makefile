@@ -1,4 +1,5 @@
 CC = gcc
+TSAN_CC ?= clang
 CFLAGS = -Wall -Wextra -pthread -I./include
 CFLAGS_OPT = $(CFLAGS) -O2
 CFLAGS_TSAN = $(CFLAGS) -g -O1 -fsanitize=thread
@@ -77,14 +78,14 @@ asm-%:
 # ThreadSanitizer
 tsan-%:
 	$(call ensure_exercise,$*)
-	$(CC) $(CFLAGS_TSAN) -o $(call exercise_tsan,$*) $(call exercise_src,$*) $(LDFLAGS)
+	$(TSAN_CC) $(CFLAGS_TSAN) -o $(call exercise_tsan,$*) $(call exercise_src,$*) $(LDFLAGS)
 	@$(call exercise_tsan,$*) || true
 
 # Perf analysis
 perf-%:
 	$(call ensure_exercise,$*)
 	$(MAKE) $(call exercise_bin,$*)
-	perf stat -e cache-references,cache-misses,LLC-load-misses,context-switches ./$(call exercise_bin,$*)
+	perf stat -e cache-references,cache-misses,L1-dcache-load-misses,context-switches,instructions,cycles ./$(call exercise_bin,$*)
 
 # Disassembly
 objdump-%:

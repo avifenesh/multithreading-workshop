@@ -1,3 +1,4 @@
+#define _XOPEN_SOURCE 700
 #include <stdio.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -14,14 +15,12 @@ void* reader(void* arg) {
     long id = (long)arg;
     
     for (int i = 0; i < OPERATIONS; i++) {
-        // TODO: Acquire read lock
-        // Hint: pthread_rwlock_rdlock(&rwlock);
+        pthread_rwlock_rdlock(&rwlock);
         
         printf("Reader %ld read: %d\n", id, shared_data);
         usleep(100000); // Simulate read operation
-        
-        // TODO: Release lock
-        // Hint: pthread_rwlock_unlock(&rwlock);
+
+        pthread_rwlock_unlock(&rwlock);
         
         usleep(50000);
     }
@@ -33,15 +32,13 @@ void* writer(void* arg) {
     long id = (long)arg;
     
     for (int i = 0; i < OPERATIONS; i++) {
-        // TODO: Acquire write lock
-        // Hint: pthread_rwlock_wrlock(&rwlock);
-        
+        pthread_rwlock_wrlock(&rwlock);
+
         shared_data++;
         printf("Writer %ld wrote: %d\n", id, shared_data);
         usleep(200000); // Simulate write operation
-        
-        // TODO: Release lock
-        // Hint: pthread_rwlock_unlock(&rwlock);
+
+        pthread_rwlock_unlock(&rwlock);
         
         usleep(300000);
     }
@@ -53,8 +50,7 @@ int main() {
     pthread_t readers[NUM_READERS];
     pthread_t writers[NUM_WRITERS];
     
-    // TODO: Initialize rwlock
-    // Hint: pthread_rwlock_init(&rwlock, NULL);
+    pthread_rwlock_init(&rwlock, NULL);
     
     printf("Starting read-write lock demo (readers: %d, writers: %d)\n\n", 
            NUM_READERS, NUM_WRITERS);
@@ -86,8 +82,7 @@ int main() {
     printf("\nCompleted in %.2f seconds\n", elapsed);
     printf("Final value: %d\n", shared_data);
     
-    // TODO: Destroy rwlock
-    // Hint: pthread_rwlock_destroy(&rwlock);
+    pthread_rwlock_destroy(&rwlock);
     
     return 0;
 }

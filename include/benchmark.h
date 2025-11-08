@@ -1,10 +1,15 @@
 #ifndef BENCHMARK_H
 #define BENCHMARK_H
 
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include <time.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdalign.h>
+#include <stdlib.h>
 
 // =============================================================================
 // Timing Utilities
@@ -80,6 +85,7 @@ static inline void* cache_aligned_alloc(size_t size) {
 
 #ifdef __linux__
 #include <linux/perf_event.h>
+#include <sys/ioctl.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <string.h>
