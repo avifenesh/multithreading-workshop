@@ -53,6 +53,7 @@ void demo_thread_creation() {
 int shared_counter = 0;
 
 void *race_increment(void *arg) {
+    (void)arg;
     for (int i = 0; i < ITERATIONS; i++) {
         shared_counter++;  // RACE! Not atomic
     }
@@ -89,6 +90,7 @@ int mutex_counter = 0;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void *mutex_increment(void *arg) {
+    (void)arg;
     for (int i = 0; i < ITERATIONS; i++) {
         pthread_mutex_lock(&mutex);
         mutex_counter++;
@@ -123,6 +125,7 @@ void demo_mutex() {
 atomic_int atomic_counter = 0;
 
 void *atomic_increment(void *arg) {
+    (void)arg;
     for (int i = 0; i < ITERATIONS; i++) {
         atomic_fetch_add(&atomic_counter, 1);
     }
@@ -154,12 +157,14 @@ atomic_int data = 0;
 atomic_int ready = 0;
 
 void *producer(void *arg) {
+    (void)arg;
     atomic_store_explicit(&data, 42, memory_order_relaxed);
     atomic_store_explicit(&ready, 1, memory_order_release);  // Barrier
     return NULL;
 }
 
 void *consumer(void *arg) {
+    (void)arg;
     while (!atomic_load_explicit(&ready, memory_order_acquire)) {  // Barrier
         // Wait
     }

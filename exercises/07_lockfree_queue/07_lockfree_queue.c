@@ -22,11 +22,35 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <stddef.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <sched.h>
+#include <time.h>
 #include "benchmark.h"
+
+#ifndef ALIGN_HEAD
+#define ALIGN_HEAD 64
+#endif
+
+#ifndef ALIGN_TAIL
+#define ALIGN_TAIL 64
+#endif
+
+#if ALIGN_HEAD
+#define HEAD_ALIGN_SPEC alignas(ALIGN_HEAD)
+#else
+#define HEAD_ALIGN_SPEC
+#endif
+
+#if ALIGN_TAIL
+#define TAIL_ALIGN_SPEC alignas(ALIGN_TAIL)
+#else
+#define TAIL_ALIGN_SPEC
+#endif
 
 #define QUEUE_SIZE 1024  // Must be power of 2
 #define MASK (QUEUE_SIZE - 1)
@@ -36,36 +60,48 @@
 typedef struct {
     // The ring buffer
     int buffer[QUEUE_SIZE];
-
-    // TODO: Add head and tail indices with proper cache alignment
-    // These should be atomic_size_t with 64-byte cache line alignment
-    //
-    // CRITICAL: Use alignas(64) to prevent false sharing!
-    // If head and tail share a cache line, every enqueue/dequeue causes
-    // cache line ping-pong between cores = 2-3x slower
-    //
-    // Format:
-    //   alignas(64) atomic_size_t head;  // Producer writes
-    //   alignas(64) atomic_size_t tail;  // Consumer writes
-
-    alignas(64) atomic_size_t head;  // FIXME: Remove this comment when done
-    alignas(64) atomic_size_t tail;  // FIXME: Remove this comment when done
+    HEAD_ALIGN_SPEC atomic_size_t head;
+    TAIL_ALIGN_SPEC atomic_size_t tail;
 } spsc_queue_t;
 
 void queue_init(spsc_queue_t *q) {
-    // TODO: Initialize head and tail to 0
-    atomic_store(&q->head, 0);  // FIXME: Remove this comment when done
-    atomic_store(&q->tail, 0);  // FIXME: Remove this comment when done
+    atomic_store(&q->head, 0);
+    atomic_store(&q->tail, 0);
+}
+
+static void print_layout_info(spsc_queue_t *q) {
+    uintptr_t queue_addr = (uintptr_t)q;
+    uintptr_t head_addr = (uintptr_t)&q->head;
+    uintptr_t tail_addr = (uintptr_t)&q->tail;
+
+    printf("Alignment config: ALIGN_HEAD=%d, ALIGN_TAIL=%d\n", ALIGN_HEAD, ALIGN_TAIL);
+    printf("sizeof(spsc_queue_t)=%zu, align=%zu\n",
+           sizeof(spsc_queue_t), (size_t)_Alignof(spsc_queue_t));
+    printf("Offsets: head=%zu, tail=%zu\n",
+           offsetof(spsc_queue_t, head), offsetof(spsc_queue_t, tail));
+    printf("Addresses (mod 64): queue=%p (%zu), head=%p (%zu), tail=%p (%zu)\n",
+           (void *)q, (size_t)(queue_addr & 63),
+           (void *)&q->head, (size_t)(head_addr & 63),
+           (void *)&q->tail, (size_t)(tail_addr & 63));
+}
+
+static inline void adaptive_backoff(unsigned *attempts) {
+    if (*attempts < 32) {
+        __builtin_ia32_pause();
+    } else if (*attempts < 64) {
+        sched_yield();
+    } else {
+        struct timespec ts = {0, 50000}; // 50 microseconds
+        nanosleep(&ts, NULL);
+    }
+    (*attempts)++;
 }
 
 // Producer enqueues a value
 bool queue_enqueue(spsc_queue_t *q, int value) {
     size_t head = atomic_load_explicit(&q->head, memory_order_relaxed);
     size_t next_head = (head + 1) & MASK;
-
-    // TODO: Load tail with acquire ordering
-    // Why acquire? Pairs with consumer's release store to tail
-    size_t tail = 0;  // FIXME: Use atomic_load_explicit with memory_order_acquire
+    size_t tail = atomic_load_explicit(&q->tail, memory_order_acquire);
 
     if (next_head == tail) {
         return false;  // Queue full
@@ -73,11 +109,7 @@ bool queue_enqueue(spsc_queue_t *q, int value) {
 
     // Write data to buffer
     q->buffer[head] = value;
-
-    // TODO: Update head with release ordering
-    // Why release? Publishes the data write to consumer
-    // FIXME: Use atomic_store_explicit with memory_order_release
-    (void)next_head;  // Suppress warning
+    atomic_store_explicit(&q->head, next_head, memory_order_release);
     return true;
 }
 
@@ -85,33 +117,28 @@ bool queue_enqueue(spsc_queue_t *q, int value) {
 bool queue_dequeue(spsc_queue_t *q, int *value) {
     size_t tail = atomic_load_explicit(&q->tail, memory_order_relaxed);
 
-    // TODO: Load head with acquire ordering
-    // Why acquire? Sees producer's data write
-    size_t head = 0;  // FIXME: Use atomic_load_explicit with memory_order_acquire
-
+    size_t head = atomic_load_explicit(&q->head, memory_order_acquire);
     if (head == tail) {
         return false;  // Queue empty
     }
 
     // Read data from buffer
     *value = q->buffer[tail];
-
-    // TODO: Update tail with release ordering
-    // Why release? Frees the slot for producer
-    // FIXME: Use atomic_store_explicit with memory_order_release
-    (void)tail;  // Suppress warning
+    size_t next_tail = (tail + 1) & MASK;
+    atomic_store_explicit(&q->tail, next_tail, memory_order_release);
     return true;
 }
 
 // Test: Producer thread
 void *producer(void *arg) {
     spsc_queue_t *q = (spsc_queue_t *)arg;
+    unsigned backoff = 0;
 
     for (int i = 0; i < NUM_MESSAGES; i++) {
         while (!queue_enqueue(q, i)) {
-            // Queue full, spin (in real code: backoff or yield)
-            __builtin_ia32_pause();
+            adaptive_backoff(&backoff);
         }
+        backoff = 0;
     }
 
     return NULL;
@@ -122,6 +149,7 @@ void *consumer(void *arg) {
     spsc_queue_t *q = (spsc_queue_t *)arg;
     int value;
     int received = 0;
+    unsigned backoff = 0;
 
     while (received < NUM_MESSAGES) {
         if (queue_dequeue(q, &value)) {
@@ -130,9 +158,9 @@ void *consumer(void *arg) {
                 exit(1);
             }
             received++;
+            backoff = 0;
         } else {
-            // Queue empty, spin (in real code: backoff or yield)
-            __builtin_ia32_pause();
+            adaptive_backoff(&backoff);
         }
     }
 
@@ -145,12 +173,20 @@ int main() {
     printf("  Messages: %d, Queue size: %d\n", NUM_MESSAGES, QUEUE_SIZE);
     printf("═══════════════════════════════════════════════════════════\n\n");
 
-    spsc_queue_t *queue = malloc(sizeof(spsc_queue_t));
+    spsc_queue_t *queue = cache_aligned_alloc(sizeof(spsc_queue_t));
+    if (!queue) {
+        fprintf(stderr, "Failed to allocate queue\n");
+        return 1;
+    }
     queue_init(queue);
+    print_layout_info(queue);
+    printf("perf tip: perf stat -e cache-misses,cache-references "
+           "./exercises/07_lockfree_queue/07_lockfree_queue\n");
 
     pthread_t prod, cons;
 
     printf("Testing lock-free queue...\n");
+    uint64_t start_nanos = get_nanos();
     TIME_BLOCK("SPSC queue throughput") {
         pthread_create(&cons, NULL, consumer, queue);
         pthread_create(&prod, NULL, producer, queue);
@@ -158,11 +194,13 @@ int main() {
         pthread_join(prod, NULL);
         pthread_join(cons, NULL);
     }
+    uint64_t end_nanos = get_nanos();
 
     printf("✓ All messages received in order!\n\n");
 
     // Performance metrics
-    double msg_per_sec = NUM_MESSAGES / (get_nanos() / 1e9);
+    double elapsed_sec = (end_nanos - start_nanos) / 1e9;
+    double msg_per_sec = elapsed_sec > 0 ? NUM_MESSAGES / elapsed_sec : 0.0;
     printf("Throughput: %.2f million messages/sec\n", msg_per_sec / 1e6);
 
     printf("\n═══════════════════════════════════════════════════════════\n");

@@ -34,12 +34,14 @@ int data_broken = 0;
 int flag_broken = 0;
 
 void *producer_broken(void *arg) {
+    (void)arg;
     data_broken = 42;  // Can be reordered!
     flag_broken = 1;   // Can be reordered!
     return NULL;
 }
 
 void *consumer_broken(void *arg) {
+    (void)arg;
     while (flag_broken == 0) {
         // Busy wait - might never see flag=1 due to caching
     }
@@ -50,12 +52,14 @@ void *consumer_broken(void *arg) {
 
 // Version 2: seq_cst - strongest ordering
 void *producer_seqcst(void *arg) {
+    (void)arg;
     atomic_store_explicit(&data, 42, memory_order_seq_cst);
     atomic_store_explicit(&flag, 1, memory_order_seq_cst);
     return NULL;
 }
 
 void *consumer_seqcst(void *arg) {
+    (void)arg;
     while (atomic_load_explicit(&flag, memory_order_seq_cst) == 0) {
         // Busy wait with seq_cst ordering
     }
@@ -67,12 +71,14 @@ void *consumer_seqcst(void *arg) {
 
 // Version 3: acquire-release - efficient synchronization
 void *producer_acqrel(void *arg) {
+    (void)arg;
     atomic_store_explicit(&data, 42, memory_order_relaxed);
     atomic_store_explicit(&flag, 1, memory_order_release); // Release barrier
     return NULL;
 }
 
 void *consumer_acqrel(void *arg) {
+    (void)arg;
     while (atomic_load_explicit(&flag, memory_order_acquire) == 0) {
         // Acquire barrier on successful read
     }
