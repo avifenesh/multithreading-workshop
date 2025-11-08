@@ -6,6 +6,17 @@ LDFLAGS = -pthread
 
 EXERCISES = 00_quick_review 01_atomics 02_rwlock 03_cache_effects 04_memory_ordering 05_spinlock_internals 06_barriers 07_lockfree_queue
 
+# Helpers to resolve either numeric prefixes (e.g., 01) or full exercise names.
+find_exercise = $(strip \
+	$(if $(filter $(1),$(EXERCISES)),$(1),\
+	$(firstword $(filter $(1)_%,$(EXERCISES)))))
+ensure_exercise = $(if $(call find_exercise,$1),,$(error Unknown exercise '$1'))
+exercise_dir = $(call find_exercise,$1)
+exercise_src = exercises/$(call exercise_dir,$1)/$(call exercise_dir,$1).c
+exercise_bin = exercises/$(call exercise_dir,$1)/$(call exercise_dir,$1)
+exercise_asm = exercises/$(call exercise_dir,$1)/$(call exercise_dir,$1).s
+exercise_tsan = exercises/$(call exercise_dir,$1)/$(call exercise_dir,$1)_tsan
+
 BINARIES = $(foreach ex,$(EXERCISES),exercises/$(ex)/$(ex))
 SOLUTIONS = $(foreach ex,$(EXERCISES),exercises/$(ex)/solution)
 
@@ -58,22 +69,28 @@ run-07: exercises/07_lockfree_queue/07_lockfree_queue
 	@./exercises/07_lockfree_queue/07_lockfree_queue
 
 # Assembly output
-asm-%: exercises/%/%.c
-	$(CC) $(CFLAGS_OPT) -S -fverbose-asm -masm=intel -o exercises/$*/$*.s $<
-	@echo "Assembly: exercises/$*/$*.s"
+asm-%:
+	$(call ensure_exercise,$*)
+	$(CC) $(CFLAGS_OPT) -S -fverbose-asm -masm=intel -o $(call exercise_asm,$*) $(call exercise_src,$*)
+	@echo "Assembly: $(call exercise_asm,$*)"
 
 # ThreadSanitizer
-tsan-%: exercises/%/%.c
-	$(CC) $(CFLAGS_TSAN) -o exercises/$*/$*_tsan $< $(LDFLAGS)
-	@./exercises/$*/$*_tsan || true
+tsan-%:
+	$(call ensure_exercise,$*)
+	$(CC) $(CFLAGS_TSAN) -o $(call exercise_tsan,$*) $(call exercise_src,$*) $(LDFLAGS)
+	@$(call exercise_tsan,$*) || true
 
 # Perf analysis
-perf-%: exercises/%/%
-	perf stat -e cache-references,cache-misses,LLC-load-misses,context-switches ./$<
+perf-%:
+	$(call ensure_exercise,$*)
+	$(MAKE) $(call exercise_bin,$*)
+	perf stat -e cache-references,cache-misses,LLC-load-misses,context-switches ./$(call exercise_bin,$*)
 
 # Disassembly
-objdump-%: exercises/%/%
-	objdump -d -M intel -S $< | less
+objdump-%:
+	$(call ensure_exercise,$*)
+	$(MAKE) $(call exercise_bin,$*)
+	objdump -d -M intel -S $(call exercise_bin,$*) | less
 
 clean:
 	rm -f $(BINARIES) $(SOLUTIONS)
