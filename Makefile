@@ -84,7 +84,7 @@ tsan-%:
 perf-%:
 	$(call ensure_exercise,$*)
 	$(MAKE) $(call exercise_bin,$*)
-	perf stat -e cache-references,cache-misses,LLC-load-misses,context-switches ./$(call exercise_bin,$*)
+	perf stat -e cache-references,cache-misses,L1-dcache-load-misses,context-switches,instructions,cycles ./$(call exercise_bin,$*)
 
 # Disassembly
 objdump-%:
