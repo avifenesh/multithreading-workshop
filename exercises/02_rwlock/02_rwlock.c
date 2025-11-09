@@ -11,6 +11,14 @@
 int shared_data = 0;
 pthread_rwlock_t rwlock;
 
+static void
+sleep_for_us (long usec)
+{
+  struct timespec req
+      = { .tv_sec = usec / 1000000L, .tv_nsec = (usec % 1000000L) * 1000L };
+  nanosleep (&req, NULL);
+}
+
 void* reader(void* arg) {
     long id = (long)arg;
     
@@ -18,11 +26,11 @@ void* reader(void* arg) {
         pthread_rwlock_rdlock(&rwlock);
         
         printf("Reader %ld read: %d\n", id, shared_data);
-        usleep(100000); // Simulate read operation
+        sleep_for_us (100000); // Simulate read operation
 
         pthread_rwlock_unlock(&rwlock);
-        
-        usleep(50000);
+
+        sleep_for_us (50000);
     }
     
     return NULL;
@@ -36,11 +44,11 @@ void* writer(void* arg) {
 
         shared_data++;
         printf("Writer %ld wrote: %d\n", id, shared_data);
-        usleep(200000); // Simulate write operation
+        sleep_for_us (200000); // Simulate write operation
 
         pthread_rwlock_unlock(&rwlock);
-        
-        usleep(300000);
+
+        sleep_for_us (300000);
     }
     
     return NULL;
