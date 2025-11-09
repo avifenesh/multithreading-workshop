@@ -5,7 +5,7 @@ CFLAGS_OPT = $(CFLAGS) -O2
 CFLAGS_TSAN = $(CFLAGS) -g -O1 -fsanitize=thread
 LDFLAGS = -pthread
 
-EXERCISES = 00_quick_review 01_atomics 02_rwlock 03_cache_effects 04_memory_ordering 05_spinlock_internals 06_barriers 07_lockfree_queue
+EXERCISES = 00_quick_review 01_atomics 02_rwlock 03_cache_effects 04_memory_ordering 05_spinlock_internals 06_barriers 07_lockfree_queue 08_summary
 
 # Helpers to resolve either numeric prefixes (e.g., 01) or full exercise names.
 find_exercise = $(strip \
@@ -43,6 +43,8 @@ exercises/%/solution : exercises/%/solution.c
 04_memory_ordering: exercises/04_memory_ordering/04_memory_ordering
 05_spinlock_internals: exercises/05_spinlock_internals/05_spinlock_internals
 06_barriers: exercises/06_barriers/06_barriers
+07_lockfree_queue: exercises/07_lockfree_queue/07_lockfree_queue
+08_summary: exercises/08_summary/08_summary
 
 # Run individual exercises
 run-00: exercises/00_quick_review/00_quick_review
@@ -68,6 +70,9 @@ run-06: exercises/06_barriers/06_barriers
 
 run-07: exercises/07_lockfree_queue/07_lockfree_queue
 	@./exercises/07_lockfree_queue/07_lockfree_queue
+
+run-08: exercises/08_summary/08_summary
+	@./exercises/08_summary/08_summary
 
 # Assembly output
 asm-%:

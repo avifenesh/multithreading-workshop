@@ -28,6 +28,7 @@ sudo apt-get install build-essential linux-tools-generic valgrind
 5. **05_spinlock_internals** - TAS → TTAS → TTAS+PAUSE → Exponential backoff, CPU PAUSE instruction
 6. **06_barriers** - Phase synchronization, manual implementation, epoch pattern
 7. **07_lockfree_queue** - Lock-free SPSC queue, cache alignment, acquire-release synchronization
+8. **08_summary** - Summary capstone: compare mutex vs per-thread padded counters and an acquire/release SPSC path
 
 ## Quick Start
 
@@ -104,6 +105,44 @@ make asm-05  # See LOCK XCHG, PAUSE instructions
 make tsan-04  # Detect broken synchronization
 ```
 
+## Platform Notes
+
+### macOS — Equivalent, Same, Different
+- Equivalent
+  - Build: `xcode-select --install` then `brew install llvm binutils`; run `make all`. Use Apple Clang by default (`gcc` is Clang on macOS).
+  - TSan: `TSAN_CC=clang make tsan-04` (ThreadSanitizer supported on Apple Clang).
+  - Disassembly: `llvm-objdump -d --x86-asm-syntax=intel -S <bin> | less`.
+  - Debugging: `lldb <bin>` (instead of `gdb`).
+- Same
+  - All exercises build on Intel and Apple Silicon; pthreads + C11 atomics work unchanged.
+  - Assembly generation via `clang -S -O2 -fverbose-asm` works; if `-masm=intel` is rejected, omit it.
+- Different
+  - `perf-*` targets are Linux-only. Use sampling instead: `xcrun xctrace record --template 'Time Profiler' --launch ./<bin> --output trace.trace` or quick `sample <pid> 5 -mayDie`.
+  - `objdump-%` uses GNU objdump; prefer `llvm-objdump` on macOS (see Equivalent above).
+  - Internals differ: no `futex`/`clone` on macOS; mutexes/condvars are built on Mach primitives (e.g., `ulock`), but concepts map 1:1.
+
+### Windows — Equivalent, Same, Different
+- Equivalent
+  - Recommended: WSL2 + Ubuntu. Install deps (`sudo apt-get install build-essential linux-tools-generic valgrind`) and use `make`/`perf` as-is.
+  - Native (MSYS2/MinGW): Install MSYS2, then in the UCRT64 shell: `pacman -S --needed base-devel mingw-w64-ucrt-x86_64-toolchain`. Build with `make all` (links `libwinpthread` via `-pthread`).
+  - Disassembly: `llvm-objdump -d -S <bin>` or `objdump -d -S <bin>` from MSYS2 binutils.
+- Same
+  - Exercises compile with GCC/Clang in MSYS2 using pthreads and C11 atomics.
+  - Spin/wait semantics and memory-ordering exercises apply unchanged conceptually.
+- Different
+  - `perf-*` not available natively; use Windows Performance Recorder/Analyzer (WPR/WPA) or Visual Studio Profiler. Prefer WSL2 for parity.
+  - ThreadSanitizer is limited on native Windows toolchains; use Clang+WSL2 for TSan.
+  - Under-the-hood uses Win32 primitives (e.g., SRWLOCK) rather than Linux `futex`.
+
+#### Windows internals: SRWLOCK vs Linux futex
+- Linux `pthread_mutex_t`/`pthread_cond_t` rely on `futex()` — user mode fast path, `FUTEX_WAIT/FUTEX_WAKE` slow path, optional priority inheritance (`FUTEX_LOCK_PI`).
+- Windows `SRWLOCK`/`CRITICAL_SECTION` spin in user mode, then park on kernel waits (push locks or keyed events). Windows exposes the futex-like primitive as `WaitOnAddress`/`WakeByAddress*`, but high-level locks call it internally.
+- Priority inheritance & robustness: POSIX has `PTHREAD_PRIO_INHERIT` and `PTHREAD_MUTEX_ROBUST`; Windows relies on priority boosting heuristics and `WAIT_ABANDONED` (for kernel `Mutex` objects only).
+- Cross-process: POSIX allows `PTHREAD_PROCESS_SHARED` in shared memory; Windows requires named kernel objects (Mutex/Semaphore/Event) because `SRWLOCK`/`CRITICAL_SECTION` are process-local.
+
+### Capstone — Summary Exercise
+- See `exercises/08_summary` for a hands-on summary that combines atomics, memory ordering, cache effects, and synchronization. Build with `make 08_summary` and run with `make run-08`.
+
 ## References
 
 - **SYSTEMS_GUIDE.md** - Core theory (futex, MESI, memory models)
@@ -112,4 +151,3 @@ make tsan-04  # Detect broken synchronization
 - [Intel SDM](https://software.intel.com/sdm) - Memory ordering, LOCK prefix
 - [Drepper: What Every Programmer Should Know About Memory](https://people.freebsd.org/~lstewart/articles/cpumemory.pdf)
 - [McKenney: Linux Kernel Perfbook](https://kernel.org/pub/linux/kernel/people/paulmck/perfbook/perfbook.html)
-
