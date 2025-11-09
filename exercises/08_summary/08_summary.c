@@ -19,15 +19,15 @@
  */
 
 #define _DEFAULT_SOURCE
+#include "benchmark.h"
+#include <pthread.h>
+#include <stdalign.h>
+#include <stdatomic.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <pthread.h>
-#include <stdatomic.h>
-#include <stdalign.h>
-#include <stdint.h>
-#include <stdbool.h>
 #include <unistd.h>
-#include "benchmark.h"
 
 #define NUM_THREADS 8
 #define INCREMENTS 2000000
@@ -42,53 +42,58 @@ static atomic_int start_flag = 0;
 // Variant A — Shared counter with synchronization
 // ============================================================
 
-// TODO: Add your synchronization primitive here
-// Hint: You can use pthread_mutex_t, pthread_spinlock_t, or implement
-// your own spinlock using atomics (TAS or TTAS from exercise 05)
-
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static long shared_counter = 0;
 
 static void* variant_a_worker(void* arg) {
-    // TODO: Wait for start_flag to become 1
-    // Hint: Use memory_order_acquire for proper synchronization
+  while (atomic_load_explicit (&start_flag, memory_order_acquire) == 0)
+    {
+      // Busy wait
+    }
 
-    // TODO: Loop INCREMENTS times
-    // TODO: For each iteration:
-    //   1. Acquire the lock
-    //   2. Increment shared_counter
-    //   3. Release the lock
+  for (int i = 0; i < INCREMENTS; i++)
+    {
+      pthread_mutex_lock (&mutex);
+      shared_counter++;
+      pthread_mutex_unlock (&mutex);
+    }
 
     (void)arg;
     return NULL;
 }
 
 static void run_variant_a(void) {
-    pthread_t threads[NUM_THREADS];
-    (void)threads;  // Remove this line once you create threads
+  pthread_t threads[NUM_THREADS];
 
-    // TODO: Initialize your synchronization primitive
+  pthread_mutex_init (&mutex, NULL);
 
-    shared_counter = 0;
-    atomic_store_explicit(&start_flag, 0, memory_order_relaxed);
+  shared_counter = 0;
+  atomic_store_explicit (&start_flag, 0, memory_order_relaxed);
 
-    printf("═══════════════════════════════════════════════════════════\n");
-    printf("Variant A: Shared counter with synchronization\n");
+  printf ("═══════════════════════════════════════════════════════════\n");
+  printf ("Variant A: Shared counter with synchronization\n");
 
-    TIME_BLOCK("Variant A: synchronized counter") {
-        // TODO: Create NUM_THREADS threads running variant_a_worker
+  TIME_BLOCK ("Variant A: synchronized counter")
+  {
+    for (int i = 0; i < NUM_THREADS; i++)
+      {
+        pthread_create (&threads[i], NULL, variant_a_worker, NULL);
+      }
+    atomic_store_explicit (&start_flag, 1, memory_order_release);
 
-        // TODO: Signal threads to start by setting start_flag to 1
-        // Hint: Use memory_order_release
-
-        // TODO: Join all threads
-    }
+    for (int i = 0; i < NUM_THREADS; i++)
+      {
+        pthread_join (threads[i], NULL);
+      }
+  }
 
     long expected = (long)NUM_THREADS * INCREMENTS;
     printf("  Result: %ld (expected %ld) %s\n",
            shared_counter, expected,
            shared_counter == expected ? "✓" : "✗ INCORRECT");
 
-    // TODO: Cleanup your synchronization primitive
+    pthread_mutex_destroy (&mutex);
+    atomic_store_explicit (&start_flag, 0, memory_order_relaxed);
 
     printf("\n");
 }
@@ -103,23 +108,45 @@ static void run_variant_a(void) {
 //
 // Hint: Review exercise 03 for cache line concepts
 
+typedef struct
+{
+  atomic_long counter;
+} packed_counter_t;
+
+typedef struct
+{
+  alignas (64) atomic_long counter;
+} padded_counter_t;
+
 static void* variant_b_worker_packed(void* arg) {
-    // TODO: Cast arg to your packed counter type
+  packed_counter_t *counter = (packed_counter_t *)arg;
 
-    // TODO: Wait for start_flag (memory_order_acquire)
+  while (atomic_load_explicit (&start_flag, memory_order_acquire) == 0)
+    {
+      // Busy wait
+    }
 
-    // TODO: Loop INCREMENTS times
-    // TODO: Increment YOUR thread's counter using atomic operations
-    // Hint: Use memory_order_relaxed since no cross-thread synchronization needed
+  for (int i = 0; i < INCREMENTS; i++)
+    {
+      atomic_fetch_add_explicit (&counter->counter, 1, memory_order_relaxed);
+    }
 
-    (void)arg;
     return NULL;
 }
 
 static void* variant_b_worker_padded(void* arg) {
-    // TODO: Same as packed version, but cast to padded counter type
+  padded_counter_t *counter = (padded_counter_t *)arg;
 
-    (void)arg;
+  while (atomic_load_explicit (&start_flag, memory_order_acquire) == 0)
+    {
+      // Busy wait
+    }
+
+  for (int i = 0; i < INCREMENTS; i++)
+    {
+      atomic_fetch_add_explicit (&counter->counter, 1, memory_order_relaxed);
+    }
+
     return NULL;
 }
 
@@ -130,47 +157,82 @@ static void run_variant_b(void) {
     printf("═══════════════════════════════════════════════════════════\n");
     printf("Variant B: Per-thread counters (false sharing comparison)\n");
 
-    // TODO: Print sizes of your counter structures
-    // Expected: packed ~8 bytes, padded ~64 bytes
+    printf ("  Size of packed_counter_t: %zu bytes\n",
+            sizeof (packed_counter_t));
+    printf ("  Size of padded_counter_t: %zu bytes\n",
+            sizeof (padded_counter_t));
+
+    atomic_store (&start_flag, 0);
 
     // ----- Packed (false sharing) -----
-    // TODO: Allocate array of NUM_THREADS packed counters
-    // TODO: Initialize each counter to 0
-
-    atomic_store(&start_flag, 0);
+    packed_counter_t *packed_counters
+        = malloc (NUM_THREADS * sizeof (packed_counter_t));
+    for (int i = 0; i < NUM_THREADS; i++)
+      {
+        atomic_store (&packed_counters[i].counter, 0);
+      }
 
     TIME_BLOCK("Variant B: packed (false sharing)") {
-        // TODO: Create threads, each getting pointer to its counter
-        // TODO: Signal start
-        // TODO: Join threads
+      for (int i = 0; i < NUM_THREADS; i++)
+        {
+          pthread_create (&threads[i], NULL, variant_b_worker_packed,
+                          &packed_counters[i]);
+        }
+      atomic_store (&start_flag, 1);
+      for (int i = 0; i < NUM_THREADS; i++)
+        {
+          pthread_join (threads[i], NULL);
+        }
     }
 
-    // TODO: Sum all packed counters
     long packed_total = 0;
+    for (int i = 0; i < NUM_THREADS; i++)
+      {
+        packed_total += atomic_load (&packed_counters[i].counter);
+      }
 
     printf("  Packed total: %ld (expected %ld) %s\n",
            packed_total, (long)NUM_THREADS * INCREMENTS,
            packed_total == (long)NUM_THREADS * INCREMENTS ? "✓" : "✗");
 
-    // TODO: Free packed counters
+    free (packed_counters);
+    printf ("\n");
 
     // ----- Padded (no false sharing) -----
-    // TODO: Same as above but with padded counters
+    padded_counter_t *padded_counters
+        = malloc (NUM_THREADS * sizeof (padded_counter_t));
+    for (int i = 0; i < NUM_THREADS; i++)
+      {
+        atomic_store (&padded_counters[i].counter, 0);
+      }
 
     atomic_store(&start_flag, 0);
 
     TIME_BLOCK("Variant B: padded (cache-line isolated)") {
-        // TODO: Create threads with padded counters
+      for (int i = 0; i < NUM_THREADS; i++)
+        {
+          pthread_create (&threads[i], NULL, variant_b_worker_padded,
+                          &padded_counters[i]);
+        }
+      atomic_store (&start_flag, 1);
+      for (int i = 0; i < NUM_THREADS; i++)
+        {
+          pthread_join (threads[i], NULL);
+        }
     }
-
     long padded_total = 0;
+
+    for (int i = 0; i < NUM_THREADS; i++)
+      {
+        padded_total += atomic_load (&padded_counters[i].counter);
+      }
 
     printf("  Padded total: %ld (expected %ld) %s\n",
            padded_total, (long)NUM_THREADS * INCREMENTS,
            padded_total == (long)NUM_THREADS * INCREMENTS ? "✓" : "✗");
 
-    // TODO: Free padded counters
-
+    free (padded_counters);
+    atomic_store (&start_flag, 0);
     printf("\n");
 }
 
