@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This is a systems-level multithreading workshop in C focused on understanding pthread internals, memory architecture, and hardware-level synchronization. The codebase contains 7 exercises (00-06) demonstrating thread mechanics, synchronization primitives, cache coherency, and memory ordering at the hardware level.
+This is a systems-level multithreading workshop in C focused on understanding pthread internals, memory architecture, and hardware-level synchronization. The codebase contains 9 exercises (00-08) demonstrating thread mechanics, synchronization primitives, cache coherency, and memory ordering at the hardware level.
 
 ## Build System
 
@@ -12,7 +12,7 @@ The project uses a Makefile-based build system with standardized targets:
 
 ### Basic Commands
 ```bash
-make all                    # Build all exercises (00-06)
+make all                    # Build all exercises (00-08)
 make solutions              # Build all solution files
 make <exercise_name>        # Build specific exercise (e.g., make 01_atomics)
 make clean                  # Remove all binaries and generated files
@@ -22,7 +22,7 @@ make clean                  # Remove all binaries and generated files
 ```bash
 make run-00                 # Run exercise 00_quick_review
 make run-01                 # Run exercise 01_atomics
-# Pattern: make run-<number> for exercises 00-06
+# Pattern: make run-<number> for exercises 00-08
 ```
 
 ### Analysis Tools
@@ -50,14 +50,15 @@ make objdump-<number>       # Disassemble binary with Intel syntax
 - **QUICKSTART.md** - 30-minute getting started guide
 
 ### Exercise Progression
-1. **00_quick_review** - Daily warmup, core threading concepts (complete demo, not a challenge)
-2. **01_atomics** - Memory ordering deep dive (relaxed vs seq_cst vs acquire-release), message passing patterns
-3. **02_rwlock** - Reader-writer locks for scalable concurrent reads
-4. **03_cache_effects** - False sharing, MESI cache coherency, 64-byte cache line alignment
-5. **04_memory_ordering** - x86 TSO vs ARM weak ordering, acquire/release patterns, ThreadSanitizer essential
-6. **05_spinlock_internals** - TAS → TTAS → TTAS+PAUSE → Exponential backoff, CPU PAUSE instruction
-7. **06_barriers** - Phase synchronization, manual barrier implementation, epoch patterns
-8. **07_lockfree_queue** - Lock-free SPSC queue, cache alignment, acquire-release synchronization (NEW!)
+0. **00_quick_review** - Daily warmup, core threading concepts (complete demo, not a challenge)
+1. **01_atomics** - Memory ordering deep dive (relaxed vs seq_cst vs acquire-release), message passing patterns
+2. **02_rwlock** - Reader-writer locks for scalable concurrent reads
+3. **03_cache_effects** - False sharing, MESI cache coherency, 64-byte cache line alignment
+4. **04_memory_ordering** - x86 TSO vs ARM weak ordering, acquire/release patterns, ThreadSanitizer essential
+5. **05_spinlock_internals** - TAS → TTAS → TTAS+PAUSE → Exponential backoff, CPU PAUSE instruction
+6. **06_barriers** - Phase synchronization, manual barrier implementation, epoch patterns
+7. **07_lockfree_queue** - Lock-free SPSC queue, cache alignment, acquire-release synchronization
+8. **08_summary** - **Comprehensive capstone challenge**: Implement three concurrent counting strategies from scratch (synchronized shared counter, per-thread counters with false sharing comparison, SPSC queue). Tests ability to recall and synthesize concepts from all previous exercises.
 
 ## Compilation Flags
 
@@ -114,9 +115,10 @@ When modifying synchronization code:
 
 ## Important Notes
 
-- Exercises 01, 05, 07 contain TODOs for hands-on implementation challenges
-- Exercises 00, 03, 04, 06 are complete demonstrations with educational commentary
-- Solutions demonstrate correct implementation patterns
+- **Hands-on exercises**: 01 (atomics), 05 (spinlocks), 07 (lock-free queue), 08 (comprehensive capstone)
+- **Complete demonstrations**: 00 (warmup), 02 (rwlock), 03 (cache effects), 04 (memory ordering), 06 (barriers)
+- **Exercise 08 is the capstone**: A from-scratch implementation challenge testing recall of all concepts - no code provided, only TODO hints
+- Solutions demonstrate correct implementation patterns - but try implementing yourself first
 - SYSTEMS_GUIDE.md is the authoritative reference for understanding how primitives work under the hood
 - Performance characteristics vary by architecture (x86 vs ARM) and CPU generation
 - Always use `while` loops (not `if`) with condition variables due to spurious wakeups
