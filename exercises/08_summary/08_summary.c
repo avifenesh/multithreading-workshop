@@ -37,13 +37,97 @@
 #define NUM_MESSAGES 1000000
 
 static atomic_int start_flag = 0;
+static long shared_counter = 0;
 
 // ============================================================
 // Variant A — Shared counter with synchronization
 // ============================================================
+typedef struct
+{
+  atomic_bool locked;
+} backoff_spinlock_t;
 
+#define BACKOFF_MIN 4
+#define BACKOFF_MAX 1024
+
+static void
+backoff_spinlock_init (backoff_spinlock_t *lock)
+{
+  atomic_store_explicit (&lock->locked, false, memory_order_relaxed);
+}
+
+static void
+backoff_lock (backoff_spinlock_t *lock)
+{
+  int backoff = BACKOFF_MIN;
+  while (1)
+    {
+      if (!atomic_load_explicit (&lock->locked, memory_order_relaxed))
+        {
+          bool expected = false;
+          if (atomic_compare_exchange_weak_explicit (
+                  &lock->locked, &expected, true, memory_order_acquire,
+                  memory_order_relaxed))
+            break;
+        }
+      for (int i = 0; i < backoff; i++)
+        {
+          CPU_PAUSE ();
+        }
+      backoff = (backoff * 2 > BACKOFF_MAX) ? BACKOFF_MAX : backoff * 2;
+    }
+}
+
+static void
+backoff_unlock (backoff_spinlock_t *lock)
+{
+  atomic_store_explicit (&lock->locked, false, memory_order_release);
+}
+
+static void *
+variant_a_backoff_spinlock_worker (void *arg)
+{
+  backoff_spinlock_t *lock = (backoff_spinlock_t *)arg;
+  while (!atomic_load_explicit (&start_flag, memory_order_relaxed))
+    {
+      CPU_PAUSE ();
+    }
+  for (int i = 0; i < INCREMENTS; i++)
+    {
+      backoff_lock (lock);
+      shared_counter++;
+      backoff_unlock (lock);
+    }
+  return NULL;
+}
+
+static void
+run_variant_a_backoff_spinlock ()
+{
+  backoff_spinlock_t lock;
+  backoff_spinlock_init (&lock);
+  pthread_t threads[NUM_THREADS];
+  shared_counter = 0;
+  TIME_BLOCK ("Variant A Backoff Spinlock")
+  {
+    for (int i = 0; i < NUM_THREADS; i++)
+      {
+        pthread_create (&threads[i], NULL, variant_a_backoff_spinlock_worker,
+                        &lock);
+      }
+    atomic_store_explicit (&start_flag, true, memory_order_relaxed);
+    for (int i = 0; i < NUM_THREADS; i++)
+      {
+        pthread_join (threads[i], NULL);
+      }
+  }
+  int expected = NUM_THREADS * INCREMENTS;
+  printf ("Expected: %d, Actual: %ld\n", expected, shared_counter);
+  atomic_store_explicit (&start_flag, false, memory_order_relaxed);
+  shared_counter = 0;
+}
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-static long shared_counter = 0;
+
 typedef struct
 {
   atomic_bool locked;
@@ -82,18 +166,24 @@ static void *
 variant_a_ttas_worker (void *arg)
 {
   ttas_spinlock_t *lock = (ttas_spinlock_t *)arg;
-  ttas_lock (lock);
+  while (atomic_load_explicit (&start_flag, memory_order_acquire) == 0)
+    {
+      CPU_PAUSE ();
+    }
   for (int i = 0; i < INCREMENTS; i++)
     {
+      ttas_lock (lock);
       shared_counter++;
+      ttas_unlock (lock);
     }
-  ttas_unlock (lock);
+
   return NULL;
 }
 
 static void
 run_variant_a_ttas (void)
 {
+  shared_counter = 0;
   pthread_t threads[NUM_THREADS];
   ttas_spinlock_t lock;
   ttas_spinlock_init (&lock);
@@ -101,11 +191,12 @@ run_variant_a_ttas (void)
   printf ("Variant A (TTAS): Shared counter with TTAS spinlock\n");
   TIME_BLOCK ("Variant A (TTAS): synchronized counter")
   {
-    shared_counter = 0;
     for (int i = 0; i < NUM_THREADS; i++)
       {
-        pthread_create (&threads[i], NULL, variant_a_ttas_worker, &lock);
+        pthread_create (&threads[i], NULL, variant_a_ttas_worker,
+                        (void *)&lock);
       }
+    atomic_store_explicit (&start_flag, 1, memory_order_release);
     for (int i = 0; i < NUM_THREADS; i++)
       {
         pthread_join (threads[i], NULL);
@@ -115,6 +206,7 @@ run_variant_a_ttas (void)
   printf ("  Result: %ld (expected %ld) %s\n", shared_counter, expected,
           shared_counter == expected ? "✓" : "✗ INCORRECT");
   printf ("\n");
+  atomic_store_explicit (&start_flag, 0, memory_order_relaxed);
 }
 
 static void *
@@ -173,35 +265,37 @@ run_variant_a (void)
   printf ("\n");
 }
 
-// ============================================================
-// Variant B — Per-thread counters (packed vs padded)
-// ============================================================
+  // ============================================================
+  // Variant B — Per-thread counters (packed vs padded)
+  // ============================================================
 
-typedef struct
-{
-  atomic_long counter;
-} packed_counter_t;
+  typedef struct
+  {
+    atomic_long counter;
+  } packed_counter_t;
 
-typedef struct
-{
-  alignas (64) atomic_long counter;
-} padded_counter_t;
+  typedef struct
+  {
+    alignas (64) atomic_long counter;
+  } padded_counter_t;
 
-static void* variant_b_worker_packed(void* arg) {
-  packed_counter_t *counter = (packed_counter_t *)arg;
+  static void *
+  variant_b_worker_packed (void *arg)
+  {
+    packed_counter_t *counter = (packed_counter_t *)arg;
 
-  while (atomic_load_explicit (&start_flag, memory_order_acquire) == 0)
-    {
-      CPU_PAUSE ();
-    }
+    while (atomic_load_explicit (&start_flag, memory_order_acquire) == 0)
+      {
+        CPU_PAUSE ();
+      }
 
-  for (int i = 0; i < INCREMENTS; i++)
-    {
-      atomic_fetch_add_explicit (&counter->counter, 1, memory_order_relaxed);
-    }
+    for (int i = 0; i < INCREMENTS; i++)
+      {
+        atomic_fetch_add_explicit (&counter->counter, 1, memory_order_relaxed);
+      }
 
     return NULL;
-}
+  }
 
 static void* variant_b_worker_padded(void* arg) {
   padded_counter_t *counter = (padded_counter_t *)arg;
@@ -432,6 +526,7 @@ main (void)
 {
   run_variant_a ();
   run_variant_a_ttas ();
+  run_variant_a_backoff_spinlock ();
   run_variant_b ();
   run_variant_c ();
   return 0;
