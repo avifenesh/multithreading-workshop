@@ -45,33 +45,42 @@ typedef struct {
 void tas_lock(tas_spinlock_t *lock) {
     while (atomic_flag_test_and_set_explicit(&lock->lock, memory_order_acquire)) {
         // Test-and-set: atomic exchange sets flag; busy-wait while held
-    }
+      }
 }
 
-void tas_unlock(tas_spinlock_t *lock) {
-    atomic_flag_clear_explicit(&lock->lock, memory_order_release);
+void
+tas_unlock (tas_spinlock_t *lock)
+{
+  atomic_flag_clear_explicit (&lock->lock, memory_order_release);
 }
 
 // TTAS spinlock - test locally first
-typedef struct {
-    atomic_bool locked;
+typedef struct
+{
+  atomic_bool locked;
 } ttas_spinlock_t;
 
-void ttas_lock(ttas_spinlock_t *lock) {
-    while (1) {
-        // First, check locally (cheap read, can be cached)
-        if (!atomic_load_explicit(&lock->locked, memory_order_relaxed)) {
-            // Then try to acquire (expensive atomic exchange)
-            bool expected = false;
-            // Weak CAS: may spuriously fail; updates 'expected' on failure; safe in loop
-            if (atomic_compare_exchange_weak_explicit(
-                    &lock->locked, &expected, true,
-                    memory_order_acquire,   // on success: acquire the lock
-                    memory_order_relaxed)) { // on failure: no ordering needed
-                break;  // Got the lock
+void
+ttas_lock (ttas_spinlock_t *lock)
+{
+  while (1)
+    {
+      // First, check locally (cheap read, can be cached)
+      if (!atomic_load_explicit (&lock->locked, memory_order_relaxed))
+        {
+          // Then try to acquire (expensive atomic exchange)
+          bool expected = false;
+          // Weak CAS: may spuriously fail; updates 'expected' on failure; safe
+          // in loop
+          if (atomic_compare_exchange_weak_explicit (
+                  &lock->locked, &expected, true,
+                  memory_order_acquire, // on success: acquire the lock
+                  memory_order_relaxed))
+            {        // on failure: no ordering needed
+              break; // Got the lock
             }
         }
-        cpu_relax();
+      cpu_relax ();
     }
 }
 

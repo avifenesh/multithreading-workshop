@@ -44,8 +44,82 @@ static atomic_int start_flag = 0;
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static long shared_counter = 0;
+typedef struct
+{
+  atomic_bool locked;
+} ttas_spinlock_t;
 
-static void* variant_a_worker(void* arg) {
+static void
+ttas_spinlock_init (ttas_spinlock_t *lock)
+{
+  atomic_store_explicit (&lock->locked, false, memory_order_relaxed);
+}
+
+static void
+ttas_lock (ttas_spinlock_t *lock)
+{
+  while (1)
+    {
+      if (!atomic_load_explicit (&lock->locked, memory_order_relaxed))
+        {
+          bool expected = false;
+          if (atomic_compare_exchange_weak_explicit (
+                  &lock->locked, &expected, true, memory_order_acquire,
+                  memory_order_relaxed))
+            break;
+        }
+      CPU_PAUSE ();
+    }
+}
+
+static void
+ttas_unlock (ttas_spinlock_t *lock)
+{
+  atomic_store_explicit (&lock->locked, false, memory_order_release);
+}
+
+static void *
+variant_a_ttas_worker (void *arg)
+{
+  ttas_spinlock_t *lock = (ttas_spinlock_t *)arg;
+  ttas_lock (lock);
+  for (int i = 0; i < INCREMENTS; i++)
+    {
+      shared_counter++;
+    }
+  ttas_unlock (lock);
+  return NULL;
+}
+
+static void
+run_variant_a_ttas (void)
+{
+  pthread_t threads[NUM_THREADS];
+  ttas_spinlock_t lock;
+  ttas_spinlock_init (&lock);
+  printf ("═══════════════════════════════════════════════════════════\n");
+  printf ("Variant A (TTAS): Shared counter with TTAS spinlock\n");
+  TIME_BLOCK ("Variant A (TTAS): synchronized counter")
+  {
+    shared_counter = 0;
+    for (int i = 0; i < NUM_THREADS; i++)
+      {
+        pthread_create (&threads[i], NULL, variant_a_ttas_worker, &lock);
+      }
+    for (int i = 0; i < NUM_THREADS; i++)
+      {
+        pthread_join (threads[i], NULL);
+      }
+  }
+  long expected = (long)NUM_THREADS * INCREMENTS;
+  printf ("  Result: %ld (expected %ld) %s\n", shared_counter, expected,
+          shared_counter == expected ? "✓" : "✗ INCORRECT");
+  printf ("\n");
+}
+
+static void *
+variant_a_worker (void *arg)
+{
   (void)arg;
   while (atomic_load_explicit (&start_flag, memory_order_acquire) == 0)
     {
@@ -59,10 +133,12 @@ static void* variant_a_worker(void* arg) {
       pthread_mutex_unlock (&mutex);
     }
 
-    return NULL;
+  return NULL;
 }
 
-static void run_variant_a(void) {
+static void
+run_variant_a (void)
+{
   pthread_t threads[NUM_THREADS];
 
   pthread_mutex_init (&mutex, NULL);
@@ -87,15 +163,14 @@ static void run_variant_a(void) {
       }
   }
 
-    long expected = (long)NUM_THREADS * INCREMENTS;
-    printf("  Result: %ld (expected %ld) %s\n",
-           shared_counter, expected,
-           shared_counter == expected ? "✓" : "✗ INCORRECT");
+  long expected = (long)NUM_THREADS * INCREMENTS;
+  printf ("  Result: %ld (expected %ld) %s\n", shared_counter, expected,
+          shared_counter == expected ? "✓" : "✗ INCORRECT");
 
-    pthread_mutex_destroy (&mutex);
-    atomic_store_explicit (&start_flag, 0, memory_order_relaxed);
+  pthread_mutex_destroy (&mutex);
+  atomic_store_explicit (&start_flag, 0, memory_order_relaxed);
 
-    printf("\n");
+  printf ("\n");
 }
 
 // ============================================================
@@ -356,6 +431,7 @@ int
 main (void)
 {
   run_variant_a ();
+  run_variant_a_ttas ();
   run_variant_b ();
   run_variant_c ();
   return 0;
