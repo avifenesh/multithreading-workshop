@@ -46,9 +46,10 @@ pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static long shared_counter = 0;
 
 static void* variant_a_worker(void* arg) {
+  (void)arg;
   while (atomic_load_explicit (&start_flag, memory_order_acquire) == 0)
     {
-      // Busy wait
+      CPU_PAUSE ();
     }
 
   for (int i = 0; i < INCREMENTS; i++)
@@ -58,7 +59,6 @@ static void* variant_a_worker(void* arg) {
       pthread_mutex_unlock (&mutex);
     }
 
-    (void)arg;
     return NULL;
 }
 
@@ -102,12 +102,6 @@ static void run_variant_a(void) {
 // Variant B — Per-thread counters (packed vs padded)
 // ============================================================
 
-// TODO: Define two counter types:
-// 1. packed_counter_t - just an atomic_long value (will have false sharing)
-// 2. padded_counter_t - atomic_long with alignas(64) to avoid false sharing
-//
-// Hint: Review exercise 03 for cache line concepts
-
 typedef struct
 {
   atomic_long counter;
@@ -123,7 +117,7 @@ static void* variant_b_worker_packed(void* arg) {
 
   while (atomic_load_explicit (&start_flag, memory_order_acquire) == 0)
     {
-      // Busy wait
+      CPU_PAUSE ();
     }
 
   for (int i = 0; i < INCREMENTS; i++)
@@ -139,7 +133,7 @@ static void* variant_b_worker_padded(void* arg) {
 
   while (atomic_load_explicit (&start_flag, memory_order_acquire) == 0)
     {
-      // Busy wait
+      CPU_PAUSE ();
     }
 
   for (int i = 0; i < INCREMENTS; i++)
@@ -151,26 +145,25 @@ static void* variant_b_worker_padded(void* arg) {
 }
 
 static void run_variant_b(void) {
-    pthread_t threads[NUM_THREADS];
-    (void)threads;  // Remove this line once you create threads
+  pthread_t threads[NUM_THREADS];
 
-    printf("═══════════════════════════════════════════════════════════\n");
-    printf("Variant B: Per-thread counters (false sharing comparison)\n");
+  printf ("═══════════════════════════════════════════════════════════\n");
+  printf ("Variant B: Per-thread counters (false sharing comparison)\n");
 
-    printf ("  Size of packed_counter_t: %zu bytes\n",
-            sizeof (packed_counter_t));
-    printf ("  Size of padded_counter_t: %zu bytes\n",
-            sizeof (padded_counter_t));
+  printf ("  Size of packed_counter_t: %zu bytes\n",
+          sizeof (packed_counter_t));
+  printf ("  Size of padded_counter_t: %zu bytes\n",
+          sizeof (padded_counter_t));
 
-    atomic_store (&start_flag, 0);
+  atomic_store (&start_flag, 0);
 
-    // ----- Packed (false sharing) -----
-    packed_counter_t *packed_counters
-        = malloc (NUM_THREADS * sizeof (packed_counter_t));
-    for (int i = 0; i < NUM_THREADS; i++)
-      {
-        atomic_store (&packed_counters[i].counter, 0);
-      }
+  // ----- Packed (false sharing) -----
+  packed_counter_t *packed_counters
+      = malloc (NUM_THREADS * sizeof (packed_counter_t));
+  for (int i = 0; i < NUM_THREADS; i++)
+    {
+      atomic_store (&packed_counters[i].counter, 0);
+    }
 
     TIME_BLOCK("Variant B: packed (false sharing)") {
       for (int i = 0; i < NUM_THREADS; i++)
@@ -240,122 +233,130 @@ static void run_variant_b(void) {
 // Variant C — SPSC lock-free queue
 // ============================================================
 
-// TODO: Define spsc_queue_t structure with:
-// - Fixed-size buffer (int buffer[QUEUE_SIZE])
-// - atomic_size_t head (producer writes, consumer reads)
-// - atomic_size_t tail (consumer writes, producer reads)
-// - Use alignas(64) to keep head/tail on separate cache lines
-//
-// Hint: Review exercise 07 for SPSC queue patterns
+typedef struct
+{
+  int buffer[QUEUE_SIZE];
+  alignas (64) atomic_size_t head;
+  alignas (64) atomic_size_t tail;
+} spsc_queue_t;
 
-// TODO: Implement spsc_init(spsc_queue_t* q)
-// Initialize head and tail to 0
+static int
+spsc_init (spsc_queue_t *q)
+{
+  atomic_store (&q->head, 0);
+  atomic_store (&q->tail, 0);
+  return 0;
+}
 
-// TODO: Implement spsc_enqueue(spsc_queue_t* q, int value)
-// Returns: true if enqueued, false if full
-// Key points:
-// - Load head with memory_order_relaxed (single producer)
-// - Load tail with memory_order_acquire (synchronize with consumer)
-// - Check if queue is full: (head + 1) & MASK == tail
-// - Store value to buffer[head]
-// - Store new head with memory_order_release (publish to consumer)
+static bool
+spsc_enqueue (spsc_queue_t *q, int value)
+{
+  size_t head = atomic_load_explicit (&q->head, memory_order_relaxed);
+  size_t next_head = (head + 1) & MASK;
+  size_t tail = atomic_load_explicit (&q->tail, memory_order_acquire);
+  if (next_head == tail)
+    {
+      return false;
+    }
+  q->buffer[head] = value;
+  atomic_store_explicit (&q->head, next_head, memory_order_release);
+  return true;
+}
 
-// TODO: Implement spsc_dequeue(spsc_queue_t* q, int* value)
-// Returns: true if dequeued, false if empty
-// Key points:
-// - Load tail with memory_order_relaxed (single consumer)
-// - Load head with memory_order_acquire (synchronize with producer)
-// - Check if queue is empty: head == tail
-// - Read value from buffer[tail]
-// - Store new tail with memory_order_release (publish to producer)
+static bool
+spsc_dequeue (spsc_queue_t *q, int *value)
+{
+  int tail = atomic_load_explicit (&q->tail, memory_order_relaxed);
+  int head = atomic_load_explicit (&q->head, memory_order_acquire);
+  if (head == tail)
+    return false;
+  *value = q->buffer[tail];
+  int next_tail = (tail + 1) & MASK;
+  atomic_store_explicit (&q->tail, next_tail, memory_order_release);
+  return true;
+}
 
-static void* producer(void* arg) {
-    // TODO: Cast arg to spsc_queue_t*
+static void *
+producer (void *arg)
+{
+  spsc_queue_t *q = (spsc_queue_t *)arg;
+  while (atomic_load_explicit (&start_flag, memory_order_acquire) == 0)
+    {
+      CPU_PAUSE ();
+    }
+  for (int i = 0; i < NUM_MESSAGES; i++)
+    {
+      while (!spsc_enqueue (q, i))
+        {
+          CPU_PAUSE ();
+        }
+    }
 
-    // TODO: Wait for start_flag (memory_order_acquire)
-
-    // TODO: Enqueue values 1 through NUM_MESSAGES
-    // Use a busy-wait loop with CPU_PAUSE() when queue is full
-
-    (void)arg;
-    return NULL;
+  return NULL;
 }
 
 static void* consumer(void* arg) {
-    // TODO: Cast arg to spsc_queue_t*
+  spsc_queue_t *q = (spsc_queue_t *)arg;
 
-    // TODO: Initialize counters:
-    int received = 0;
-    long sum = 0;
-    (void)received; (void)sum;  // Remove these once implemented
+  while (atomic_load_explicit (&start_flag, memory_order_acquire) == 0)
+    {
+      CPU_PAUSE ();
+    }
 
-    // TODO: Wait for start_flag (memory_order_acquire)
+  long sum = 0;
 
-    // TODO: Dequeue NUM_MESSAGES values
-    // For each value: add it to sum, increment received
-    // Use a busy-wait loop with CPU_PAUSE() when queue is empty
+  for (int i = 0; i < NUM_MESSAGES; i++)
+    {
+      int value;
+      while (!spsc_dequeue (q, &value))
+        {
+          CPU_PAUSE ();
+        }
+      sum += value;
+    }
 
-    // TODO: Return sum as void* (cast via intptr_t)
-
-    (void)arg;
-    return NULL;
+  return (void *)(intptr_t)sum;
 }
 
 static void run_variant_c(void) {
-    pthread_t prod, cons;
-    (void)prod; (void)cons;  // Remove these once you create threads
+  pthread_t prod, cons;
 
-    // TODO: Declare and initialize your spsc_queue_t
+  spsc_queue_t queue;
+  spsc_init (&queue);
 
-    atomic_store(&start_flag, 0);
+  atomic_store (&start_flag, 0);
 
-    long expected = ((long)NUM_MESSAGES * (NUM_MESSAGES + 1)) / 2;
+  long expected = ((long)NUM_MESSAGES * (NUM_MESSAGES - 1)) / 2;
 
-    printf("═══════════════════════════════════════════════════════════\n");
-    printf("Variant C: SPSC lock-free queue\n");
+  void *consumer_result;
 
-    TIME_BLOCK("Variant C: message passing") {
-        // TODO: Create consumer thread
-        // TODO: Create producer thread
+  printf ("═══════════════════════════════════════════════════════════\n");
+  printf ("Variant C: SPSC lock-free queue\n");
 
-        // TODO: Signal start (memory_order_release)
+  TIME_BLOCK ("Variant C: message passing")
+  {
+    pthread_create (&cons, NULL, consumer, &queue);
+    pthread_create (&prod, NULL, producer, &queue);
 
-        // TODO: Join both threads
-        // TODO: Extract sum from consumer's return value
+    atomic_store (&start_flag, 1);
 
-        long observed = 0;  // TODO: Get actual sum from consumer
+    pthread_join (prod, NULL);
+    pthread_join (cons, &consumer_result);
+  }
+  long observed = (long)(intptr_t)consumer_result;
 
-        printf("  Sum: %ld (expected %ld) %s\n",
-               observed, expected,
-               observed == expected ? "✓" : "✗");
-    }
+  printf ("  Sum: %ld (expected %ld) %s\n", observed, expected,
+          observed == expected ? "✓" : "✗");
+  atomic_store (&start_flag, 0);
 
-    printf("\n");
+  printf ("\n");
 }
 
-int main(void) {
-    printf("═══════════════════════════════════════════════════════════\n");
-    printf("  Exercise 08: Summary Capstone\n");
-    printf("═══════════════════════════════════════════════════════════\n");
-    printf("\n");
-    printf("IMPLEMENT all three variants below:\n");
-    printf("  A) Synchronized shared counter (mutex or spinlock)\n");
-    printf("  B) Per-thread counters (observe false sharing!)\n");
-    printf("  C) SPSC queue with acquire/release ordering\n");
-    printf("\n");
-
-    run_variant_a();
-    run_variant_b();
-    run_variant_c();
-
-    printf("═══════════════════════════════════════════════════════════\n");
-    printf("Analysis tasks:\n");
-    printf("  1. Run 'make perf-08' - compare cache-misses between variants\n");
-    printf("  2. Run 'make asm-08' - verify LOCK prefix and memory barriers\n");
-    printf("  3. Run 'make tsan-08' - check for data races\n");
-    printf("  4. Why is padded faster than packed?\n");
-    printf("  5. Why is SPSC faster than mutex?\n");
-    printf("═══════════════════════════════════════════════════════════\n");
-
-    return 0;
+int
+main (void)
+{
+  run_variant_a ();
+  run_variant_b ();
+  run_variant_c ();
+  return 0;
 }
