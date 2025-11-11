@@ -9,13 +9,19 @@
 
 #define _GNU_SOURCE
 #include <stdio.h>
-#include <pthread.h>
+#include <pthread.h>   // POSIX Threads API
 #include <stdatomic.h>
 #include <unistd.h>
 #include <sched.h>
 
 #define THREADS 4
 #define ITERATIONS 100000
+
+/*
+ * Terms used in this exercise:
+ * - Futex: Fast Userspace muTEX (Linux). User-mode fast path; kernel parks threads on contention.
+ * - CAS:   Compare-And-Swap (compare-exchange). Atomic primitive used to implement locks/lock-free ops.
+ */
 
 // ============================================================================
 // Part 1: Thread Creation Basics

@@ -13,6 +13,7 @@
  * - Only ONE producer, ONE consumer = simpler than MPMC
  * - Use memory ordering to synchronize without locks
  * - Understand cache line bouncing (false sharing)
+ * - CAS = Compare-And-Swap (aka compare-exchange) — not needed in SPSC
  *
  * MEMORY ORDERING REQUIREMENTS:
  * - Producer writes data, THEN increments head (release)
@@ -22,7 +23,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <pthread.h>
+#include <pthread.h>     // POSIX Threads API
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <unistd.h>
@@ -109,8 +110,8 @@ void *producer(void *arg) {
 
     for (int i = 0; i < NUM_MESSAGES; i++) {
         while (!queue_enqueue(q, i)) {
-            // Queue full, spin (in real code: backoff or yield)
-            __builtin_ia32_pause();
+            // Queue full, spin (use architecture hint to be polite on CPU)
+            CPU_PAUSE();  // x86: PAUSE, ARM: YIELD (see benchmark.h)
         }
     }
 
@@ -131,8 +132,8 @@ void *consumer(void *arg) {
             }
             received++;
         } else {
-            // Queue empty, spin (in real code: backoff or yield)
-            __builtin_ia32_pause();
+            // Queue empty, spin (use architecture hint)
+            CPU_PAUSE();
         }
     }
 

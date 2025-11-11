@@ -62,6 +62,8 @@ make objdump-05                # Disassemble binary
 
 ## Key Concepts
 
+See also: SYSTEMS_GUIDE.md → Glossary for acronym and instruction definitions (TSO, LL/SC, LSE, PAUSE, DMB, POSIX/IEEE, etc.).
+
 ### Thread Lifecycle
 - `clone()` syscall flags (CLONE_VM, CLONE_THREAD)
 - Stack allocation via `mmap`, guard pages

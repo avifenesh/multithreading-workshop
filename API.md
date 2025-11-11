@@ -2,6 +2,8 @@
 
 Quick reference for POSIX threads. For internals, see SYSTEMS_GUIDE.md.
 
+Note: POSIX (Portable Operating System Interface, IEEE 1003) is a standard API for Unix-like systems. The pthreads library is the POSIX threading API available on Linux and macOS; on Windows, use Win32 equivalents (e.g., SRWLOCK, CONDITION_VARIABLE) or a POSIX layer.
+
 ## Thread Management
 
 ```c
@@ -102,6 +104,61 @@ int expected = 5;
 int desired = 10;
 atomic_compare_exchange_strong(&counter, &expected, desired);
 ```
+
+### Compare-and-exchange: weak vs strong, explicit orders
+
+Prototypes (example for `atomic_int`):
+```c
+bool atomic_compare_exchange_weak(atomic_int *obj, int *expected, int desired);
+bool atomic_compare_exchange_strong(atomic_int *obj, int *expected, int desired);
+
+bool atomic_compare_exchange_weak_explicit(
+    atomic_int *obj, int *expected, int desired,
+    memory_order success_memorder, memory_order failure_memorder);
+bool atomic_compare_exchange_strong_explicit(
+    atomic_int *obj, int *expected, int desired,
+    memory_order success_memorder, memory_order failure_memorder);
+```
+
+Key semantics:
+- If `*obj == *expected`, store `desired` into `*obj` and return true.
+- Otherwise, load the current value into `*expected` and return false.
+- `weak` may fail spuriously (return false even if `*obj == *expected`), so use it in a loop. `strong` does not allow spurious failure.
+- Failure memory order must not include release semantics (i.e., it can be `memory_order_relaxed` or `memory_order_acquire`, or `memory_order_seq_cst`).
+
+Typical patterns:
+```c
+// 1) Spinlock acquire (TTAS) using weak CAS with loop
+atomic_bool locked = false;
+void lock(void) {
+    for (;;) {
+        if (!atomic_load_explicit(&locked, memory_order_relaxed)) {
+            bool expected = false;
+            if (atomic_compare_exchange_weak_explicit(
+                    &locked, &expected, true,
+                    memory_order_acquire,   // on success
+                    memory_order_relaxed))  // on failure
+                return;
+        }
+        // pause/yield hint here
+    }
+}
+void unlock(void) {
+    atomic_store_explicit(&locked, false, memory_order_release);
+}
+
+// 2) Single-shot CAS where spurious failure is undesirable → strong
+int expected = old;
+if (!atomic_compare_exchange_strong_explicit(
+        &obj, &expected, new,
+        memory_order_acq_rel, memory_order_acquire)) {
+    // expected now has the current value of obj
+}
+```
+
+Notes:
+- Prefer `weak` in loops (especially on ARM/AArch64) because it maps naturally to LL/SC and can be cheaper; on x86, `weak` and `strong` often generate the same instruction.
+- For pure “read” CAS (e.g., acquiring a flag), use `acquire` on success and `relaxed` on failure. For RMW that both reads and publishes, use `acq_rel` on success and `acquire` (or `relaxed`) on failure.
 
 ### Memory Orders
 

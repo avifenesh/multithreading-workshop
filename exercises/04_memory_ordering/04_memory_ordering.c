@@ -1,6 +1,11 @@
 /**
  * Exercise 4: Memory Ordering and CPU Memory Models
  *
+ * Acronyms in this file:
+ * - TSO = Total Store Order (x86-64 memory model property)
+ * - MFENCE = x86 full memory fence (prevents CPU reordering)
+ * - DMB ish = ARM Data Memory Barrier (inner-shareable domain)
+ *
  * ⚠️ CRITICAL x86 CAVEAT ⚠️
  * The "broken" version often WORKS on x86 due to strong memory model (TSO).
  * Use ThreadSanitizer to catch the bug: make tsan-04
@@ -21,7 +26,7 @@
  */
 
 #include <stdio.h>
-#include <pthread.h>
+#include <pthread.h>   // POSIX Threads API
 #include <stdatomic.h>
 #include <assert.h>
 

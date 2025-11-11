@@ -9,7 +9,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <pthread.h>
+#include <pthread.h>   // POSIX Threads API
 #include <stdatomic.h>
 #include <stdalign.h>
 #include "benchmark.h"

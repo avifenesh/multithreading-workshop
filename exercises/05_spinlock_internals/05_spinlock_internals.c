@@ -11,8 +11,8 @@
 
 
 #include <stdio.h>
-#include <pthread.h>
-#include <stdatomic.h>
+#include <pthread.h>     // POSIX Threads API (Portable Operating System Interface)
+#include <stdatomic.h>   // C11 atomics (lock-free ops + memory orders)
 #include <stdbool.h>
 #include "benchmark.h"
 
@@ -20,11 +20,13 @@
 #define ITERATIONS 100000
 
 #if defined(__x86_64__) || defined(__i386__)
+// Spin-wait hint: x86 PAUSE reduces power and improves HT fairness
 static inline void cpu_relax() {
     __builtin_ia32_pause();
 }
 #elif defined(__aarch64__) || defined(__arm__)
 #include <unistd.h>
+// Spin-wait hint: AArch64 YIELD tells CPU we are busy-waiting
 static inline void cpu_relax() {
     asm volatile("yield" ::: "memory");
 }
@@ -42,7 +44,7 @@ typedef struct {
 
 void tas_lock(tas_spinlock_t *lock) {
     while (atomic_flag_test_and_set_explicit(&lock->lock, memory_order_acquire)) {
-        // Busy wait - keeps doing expensive atomic operations
+        // Test-and-set: atomic exchange sets flag; busy-wait while held
     }
 }
 
@@ -61,9 +63,11 @@ void ttas_lock(ttas_spinlock_t *lock) {
         if (!atomic_load_explicit(&lock->locked, memory_order_relaxed)) {
             // Then try to acquire (expensive atomic exchange)
             bool expected = false;
+            // Weak CAS: may spuriously fail; updates 'expected' on failure; safe in loop
             if (atomic_compare_exchange_weak_explicit(
                     &lock->locked, &expected, true,
-                    memory_order_acquire, memory_order_relaxed)) {
+                    memory_order_acquire,   // on success: acquire the lock
+                    memory_order_relaxed)) { // on failure: no ordering needed
                 break;  // Got the lock
             }
         }
@@ -82,6 +86,7 @@ void ttas_pause_lock(ttas_pause_spinlock_t *lock) {
     while (1) {
         if (!atomic_load_explicit(&lock->locked, memory_order_relaxed)) {
             bool expected = false;
+            // Weak CAS: may fail spuriously; loop retries
             if (atomic_compare_exchange_weak_explicit(
                     &lock->locked, &expected, true,
                     memory_order_acquire, memory_order_relaxed)) {
@@ -115,6 +120,7 @@ void backoff_lock(backoff_spinlock_t *lock) {
     while (1) {
         if (!atomic_load_explicit(&lock->locked, memory_order_relaxed)) {
             bool expected = false;
+            // Weak CAS + backoff: reduce contention on shared cache line
             if (atomic_compare_exchange_weak_explicit(
                     &lock->locked, &expected, true,
                     memory_order_acquire, memory_order_relaxed)) {

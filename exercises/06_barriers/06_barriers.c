@@ -10,7 +10,7 @@
  */
 
 #include <stdio.h>
-#include <pthread.h>
+#include <pthread.h>   // POSIX Threads API
 #include <stdbool.h>
 #include "benchmark.h"
 
@@ -23,7 +23,7 @@ typedef struct {
     pthread_cond_t cond;
     int count;          // Threads at barrier
     int threshold;      // Total threads
-    int serial;         // Generation number (epoch)
+    int serial;         // Generation number (aka epoch)
 } barrier_t;
 
 void barrier_init(barrier_t *barrier, int threshold) {
