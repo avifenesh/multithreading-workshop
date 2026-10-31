@@ -14,7 +14,7 @@
 ## Prerequisites
 
 ```bash
-sudo apt-get install build-essential linux-tools-generic valgrind
+sudo apt-get install build-essential clang linux-tools-generic valgrind
 ```
 
 **Assumes:** Strong C, familiarity with threading concepts (you know what a mutex is, now learn how it works).
@@ -53,7 +53,6 @@ make objdump-05                # Disassemble binary
 2. **Core path:** 01 → 03 → 04 → 05 → 07 (4-5 hours)
 3. Use analysis tools liberally: `make asm-XX`, `make tsan-XX`, `make perf-XX`
 4. Read **SYSTEMS_GUIDE.md** for deeper theory
-5. See **IMPROVEMENTS.md** for detailed enhancement guide
 
 **Traditional path:**
 1. Read **SYSTEMS_GUIDE.md** (theory: futex, cache coherency, memory models)
@@ -125,7 +124,7 @@ make tsan-04  # Detect broken synchronization
 
 ### Windows — Equivalent, Same, Different
 - Equivalent
-  - Recommended: WSL2 + Ubuntu. Install deps (`sudo apt-get install build-essential linux-tools-generic valgrind`) and use `make`/`perf` as-is.
+  - Recommended: WSL2 + Ubuntu. Install deps (`sudo apt-get install build-essential clang linux-tools-generic valgrind`) and use `make`/`perf` as-is.
   - Native (MSYS2/MinGW): Install MSYS2, then in the UCRT64 shell: `pacman -S --needed base-devel mingw-w64-ucrt-x86_64-toolchain`. Build with `make all` (links `libwinpthread` via `-pthread`).
   - Disassembly: `llvm-objdump -d -S <bin>` or `objdump -d -S <bin>` from MSYS2 binutils.
 - Same
@@ -150,6 +149,6 @@ make tsan-04  # Detect broken synchronization
 - **SYSTEMS_GUIDE.md** - Core theory (futex, MESI, memory models)
 - **API.md** - pthread API reference
 - `man futex`, `man pthreads`
-- [Intel SDM](https://software.intel.com/sdm) - Memory ordering, LOCK prefix
+- [Intel SDM](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html) - Memory ordering, LOCK prefix
 - [Drepper: What Every Programmer Should Know About Memory](https://people.freebsd.org/~lstewart/articles/cpumemory.pdf)
 - [McKenney: Linux Kernel Perfbook](https://kernel.org/pub/linux/kernel/people/paulmck/perfbook/perfbook.html)
